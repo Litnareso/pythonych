@@ -200,6 +200,8 @@ private:
     }
     case If_kind: {
       mlir::LogicalResult result = mlir::success();
+      mlir::LogicalResult ifResult = mlir::success();
+      mlir::LogicalResult elseResult = mlir::success();
       auto valueOrError = mlirGen(statement->v.If.test);
       if (mlir::failed(valueOrError))
         return mlir::failure();
@@ -212,7 +214,7 @@ private:
           [&](mlir::OpBuilder &b, mlir::Location loc) {
             ifElseVariables.push(std::set<llvm::StringRef>());
 
-            result = mlirGen(statement->v.If.body);
+            ifResult = mlirGen(statement->v.If.body);
 
             varsSet = ifElseVariables.top();
             llvm::SmallVector<mlir::Value> returnValues;
@@ -230,14 +232,14 @@ private:
           [&](mlir::OpBuilder &b, mlir::Location loc) {
             ifElseVariables.push(std::set<llvm::StringRef>());
 
-            result = mlirGen(statement->v.If.orelse);
+            elseResult = mlirGen(statement->v.If.orelse);
 
             auto elseVars = ifElseVariables.top();
             if (varsSet != elseVars) {
               mlir::emitError(loc, "Assigned variables in 'if' region {")
                   << varsSet << "} are different than in 'else' region {"
                   << elseVars << "}\n";
-              result = mlir::failure();
+              elseResult = mlir::failure();
             }
             llvm::SmallVector<mlir::Value> returnValues;
             for (auto it = elseVars.begin(); it != elseVars.end(); it++) {
@@ -248,7 +250,7 @@ private:
             ifElseVariables.pop();
             b.create<mlir::scf::YieldOp>(loc, returnValues);
           }); // builder.create<mlir::scf::IfOp>
-      if (mlir::failed(result))
+      if (mlir::failed(ifResult) || mlir::failed(elseResult))
         return mlir::failure();
       // write returned values to symbol table
       for (size_t i = 0; i < resultVarsVector.size(); i++) {
